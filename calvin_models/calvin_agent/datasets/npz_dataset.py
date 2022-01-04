@@ -185,3 +185,41 @@ class NpzDataset(BaseDataset):
             possible_indices = end_idx + 1 - start_idx - self.max_window_size
             max_batched_length_per_demo.append(possible_indices)
         return episode_lookup, max_batched_length_per_demo
+
+
+class SkillsNpzDataset(NpzDataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.with_lang:
+            self.lang_annotated_skill, self.lang_skill = self.load_skill_info(self.abs_datasets_dir)
+
+            # Skill IDs
+            self.skills_to_idx = {skill: idx for idx, skill in enumerate(sorted(set(self.lang_skill)))}
+
+    def load_skill_info(self, abs_datasets_dir: Path) -> Tuple[List, List]:
+        assert abs_datasets_dir.is_dir()
+        try:
+            print("trying to load lang data from: ", abs_datasets_dir / self.lang_folder / "auto_lang_ann.npy")
+            lang_data = np.load(abs_datasets_dir / self.lang_folder / "auto_lang_ann.npy", allow_pickle=True).reshape(
+                -1
+            )[0]
+        except Exception:
+            print("Exception, trying to load lang data from: ", abs_datasets_dir / "auto_lang_ann.npy")
+            lang_data = np.load(abs_datasets_dir / "auto_lang_ann.npy", allow_pickle=True).reshape(-1)[0]
+
+        lang_annotated_skill = lang_data["language"]["ann"]
+        lang_skill = lang_data["language"]["task"]
+
+        return lang_annotated_skill, lang_skill
+
+    def get_sequences(self, idx: int, window_size: int) -> Dict:
+        seq_dict = NpzDataset.get_sequences(self, idx, window_size)
+
+        start_file_indx = self.episode_lookup[idx]
+        end_file_indx = start_file_indx + window_size
+
+        if self.with_lang:
+            skill_ids = np.array([self.skills_to_idx[self.lang_skill[self.lang_lookup[idx]]]])
+        seq_lang = {"skills": torch.from_numpy(skill_ids) if self.with_lang else torch.empty(0)}
+        seq_dict.update(seq_lang)
+        return seq_dict

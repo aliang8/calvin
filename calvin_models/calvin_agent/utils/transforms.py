@@ -61,4 +61,4 @@ class AddDepthNoise(object):
         return multiplicative_noise * tensor
 
     def __repr__(self):
-        return self.__class__.__name__ + f"{self.shape=},{self.rate=},{self.dist=}"
+        return self.__class__.__name__ + f"{self.shape},{self.rate},{self.dist}"
