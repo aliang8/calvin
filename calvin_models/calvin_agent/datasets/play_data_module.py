@@ -14,6 +14,7 @@ import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader, Dataset, DistributedSampler, RandomSampler, Sampler, SequentialSampler
 import torchvision
+from core.components.data_loader import RepeatedDataLoader
 
 logger = logging.getLogger(__name__)
 DEFAULT_TRANSFORM = OmegaConf.create({"train": None, "val": None})
@@ -27,6 +28,7 @@ class PlayDataModule(pl.LightningDataModule):
         num_workers: int = 8,
         transforms: DictConfig = DEFAULT_TRANSFORM,
         shuffle_val: bool = False,
+        n_repeat: int = 1,
         **kwargs: Dict,
     ):
         super().__init__()
@@ -41,7 +43,9 @@ class PlayDataModule(pl.LightningDataModule):
             root_data_path = Path(calvin_agent.__file__).parent / root_data_path
         self.training_dir = root_data_path / "training"
         self.val_dir = root_data_path / "validation"
+
         self.shuffle_val = shuffle_val
+        self.n_repeat = n_repeat
         self.modalities: List[str] = []
         self.transforms = transforms
 
@@ -73,9 +77,11 @@ class PlayDataModule(pl.LightningDataModule):
         self.train_datasets, self.train_sampler, self.val_datasets, self.val_sampler = {}, {}, {}, {}
         for _, dataset in self.datasets_cfg.items():
             train_dataset = hydra.utils.instantiate(
-                dataset, datasets_dir=self.training_dir, transforms=self.train_transforms
+                dataset, datasets_dir=self.training_dir, transforms=self.train_transforms, phase="train"
             )
-            val_dataset = hydra.utils.instantiate(dataset, datasets_dir=self.val_dir, transforms=self.val_transforms)
+            val_dataset = hydra.utils.instantiate(
+                dataset, datasets_dir=self.val_dir, transforms=self.val_transforms, phase="val"
+            )
             train_sampler = get_sampler(train_dataset, shuffle=True)
             val_sampler = get_sampler(val_dataset, shuffle=self.shuffle_val)
             key = dataset.key
@@ -86,30 +92,52 @@ class PlayDataModule(pl.LightningDataModule):
             self.modalities.append(key)
 
     def train_dataloader(self):
-        return {
-            key: DataLoader(
-                dataset,
-                sampler=self.train_sampler[key],
-                batch_size=dataset.batch_size,
-                num_workers=self.num_workers,
-                pin_memory=True,
-            )
-            for key, dataset in self.train_datasets.items()
-        }
+        # return {
+        #     key: DataLoader(
+        #         dataset,
+        #         sampler=self.train_sampler[key],
+        #         batch_size=dataset.batch_size,
+        #         num_workers=self.num_workers,
+        #         pin_memory=True,
+        #         drop_last=True,
+        #     )
+        #     for key, dataset in self.train_datasets.items()
+        # }
+        return RepeatedDataLoader(
+            self.train_datasets["lang"],
+            batch_size=self.train_datasets["lang"].batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            drop_last=True,
+            pin_memory=True,
+            n_repeat=self.n_repeat,
+        )
 
     def val_dataloader(self):
-        val_dataloaders = {
-            key: DataLoader(
-                dataset,
-                sampler=self.val_sampler[key],
-                batch_size=dataset.batch_size,
-                num_workers=self.num_workers,
-                pin_memory=True,
-            )
-            for key, dataset in self.val_datasets.items()
-        }
-        combined_val_loaders = CombinedLoader(val_dataloaders, "max_size_cycle")
-        return combined_val_loaders
+        # val_dataloaders = {
+        #     key: DataLoader(
+        #         dataset,
+        #         sampler=self.val_sampler[key],
+        #         batch_size=dataset.batch_size,
+        #         num_workers=self.num_workers,
+        #         pin_memory=True,
+        #         drop_last=True,
+        #     )
+        #     for key, dataset in self.val_datasets.items()
+        # }
+        # return val_dataloaders["lang"]
+        # combined_val_loaders = CombinedLoader(val_dataloaders, "max_size_cycle")
+        # return combined_val_loaders
+
+        return RepeatedDataLoader(
+            self.val_datasets["lang"],
+            batch_size=self.val_datasets["lang"].batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            drop_last=True,
+            pin_memory=True,
+            n_repeat=self.n_repeat,
+        )
 
 
 def get_sampler(dataset: Dataset, shuffle: bool) -> Sampler:

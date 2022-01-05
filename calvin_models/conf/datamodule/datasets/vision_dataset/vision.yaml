@@ -8,3 +8,17 @@ proprio_state: ${datamodule.proprioception_dims}
 obs_space: ${datamodule.observation_space}
 pad: true
 lang_folder: "lang_annotations" #${datamodule.datasets.lang_dataset.lang_folder}
+data:
+  dataset_spec:
+    dataset_class: ""
+    n_actions: 7
+    state_dim: 8
+    env_name: "calvin"
+    res: 128
+    max_seq_len: 280
+    crop_rand_subseq: True
+    subseq_len: 11
+  device: "cuda"
+  randomize_length: 0
+  split: [0.9, 0.1, 0.0]
+  resolution: 128

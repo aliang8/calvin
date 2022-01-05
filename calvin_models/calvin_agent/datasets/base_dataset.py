@@ -113,9 +113,19 @@ class BaseDataset(Dataset):
         window_size: int,
     ) -> Dict:
         pad_size = self.max_window_size - window_size
-        seq.update({"robot_obs": self.pad_with_repetition(seq["robot_obs"], pad_size)})
-        seq.update({"rgb_obs": {k: self.pad_with_repetition(v, pad_size) for k, v in seq["rgb_obs"].items()}})
-        seq.update({"depth_obs": {k: self.pad_with_repetition(v, pad_size) for k, v in seq["depth_obs"].items()}})
+
+        if "robot_obs" in seq:
+            seq.update({"robot_obs": self.pad_with_repetition(seq["robot_obs"], pad_size)})
+
+        if "states" in seq:
+            seq.update({"states": self.pad_with_repetition(seq["states"], pad_size)})
+
+        if "rgb_obs" in seq:
+            seq.update({"rgb_obs": {k: self.pad_with_repetition(v, pad_size) for k, v in seq["rgb_obs"].items()}})
+
+        if "depth_obs" in seq:
+            seq.update({"depth_obs": {k: self.pad_with_repetition(v, pad_size) for k, v in seq["depth_obs"].items()}})
+
         #  todo: find better way of distinguishing rk and play action spaces
         if self.save_format == "npz" and not self.relative_actions:
             # repeat action for world coordinates action space
@@ -133,7 +143,9 @@ class BaseDataset(Dataset):
         else:
             # set action to zero for joints action space
             seq.update({"actions": self.pad_with_zeros(seq["actions"], pad_size)})
-        seq.update({"state_info": {k: self.pad_with_repetition(v, pad_size) for k, v in seq["state_info"].items()}})
+
+        if "state_info" in seq:
+            seq.update({"state_info": {k: self.pad_with_repetition(v, pad_size) for k, v in seq["state_info"].items()}})
         return seq
 
     @staticmethod

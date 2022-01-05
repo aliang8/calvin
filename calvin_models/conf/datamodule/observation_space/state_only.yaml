@@ -1,5 +1,5 @@
 rgb_obs: []
 depth_obs: []
-state_obs: ['robot_obs']
-actions: ['actions']
-language: ['language']
+state_obs: ["states"]
+actions: ["actions"]
+language: ["language"]

@@ -14,6 +14,10 @@ from calvin_agent.datasets.utils.episode_utils import (
 )
 import numpy as np
 import torch
+import h5py
+import glob
+from core.components.data_loader import VideoDataset
+from core.utils.general_utils import shuffle_with_seed
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +146,7 @@ class NpzDataset(BaseDataset):
             lang_data = np.load(abs_datasets_dir / "auto_lang_ann.npy", allow_pickle=True).reshape(-1)[0]
 
         ep_start_end_ids = lang_data["info"]["indx"]
+        self.ep_start_end_ids = ep_start_end_ids
         lang_ann = lang_data["language"]["emb"]
         lang_lookup = []
         max_batched_length_per_demo = []
@@ -176,6 +181,7 @@ class NpzDataset(BaseDataset):
         episode_lookup = []
 
         ep_start_end_ids = np.load(abs_datasets_dir / "ep_start_end_ids.npy")
+        self.ep_start_end_ids = ep_start_end_ids
         logger.info(f'Found "ep_start_end_ids.npy" with {len(ep_start_end_ids)} episodes.')
         max_batched_length_per_demo = []
         for start_idx, end_idx in ep_start_end_ids:
@@ -212,14 +218,93 @@ class SkillsNpzDataset(NpzDataset):
 
         return lang_annotated_skill, lang_skill
 
+    def zip_sequence(self, start_idx: int, end_idx: int, idx: int) -> Dict[str, np.ndarray]:
+        """
+        Load consecutive individual frames saved as npy files and combine to episode dict
+        parameters:
+        -----------
+        start_idx: index of first frame
+        end_idx: index of last frame
+
+        returns:
+        -----------
+        episode: dict of numpy arrays containing the episode where keys are the names of modalities
+        """
+        episodes = [self.load_episode(self.get_episode_name(file_idx)) for file_idx in range(start_idx, end_idx)]
+        episode = {}
+
+        for key, _ in episodes[0].items():
+            if "rgb" not in key and "depth" not in key:
+                episode[key] = np.stack([ep[key] for ep in episodes])
+
+        if self.with_lang:
+            episode["language"] = self.lang_ann[self.lang_lookup[idx]][0]  # TODO check  [0]
+        return episode
+
     def get_sequences(self, idx: int, window_size: int) -> Dict:
         seq_dict = NpzDataset.get_sequences(self, idx, window_size)
-
         start_file_indx = self.episode_lookup[idx]
         end_file_indx = start_file_indx + window_size
 
         if self.with_lang:
             skill_ids = np.array([self.skills_to_idx[self.lang_skill[self.lang_lookup[idx]]]])
+        seq_lang = {"skills": torch.from_numpy(skill_ids) if self.with_lang else torch.empty(0)}
+        seq_dict.update(seq_lang)
+        return seq_dict
+
+
+class CalvinDataset(BaseDataset, VideoDataset):
+    NONIMAGE_FIELDS = ["states", "actions", "pad_mask", "skills"]
+
+    def __init__(self, *args, skip_frames: int = 0, **kwargs):
+        data_conf = kwargs["data"]
+        VideoDataset.__init__(
+            self,
+            data_dir=kwargs["datasets_dir"],
+            data_conf=data_conf,
+            resolution=data_conf["resolution"],
+            phase=kwargs["phase"],
+            shuffle=kwargs["phase"] == "train",
+            dataset_size=-1,
+        )
+        del kwargs["data"]
+        del kwargs["phase"]
+        BaseDataset.__init__(self, *args, **kwargs)
+
+    def _get_filenames(self):
+        """Loads filenames from self.data_dir, expects subfolders train/val/test, each with hdf5 files"""
+        filenames = sorted(glob.glob(os.path.join(self.data_dir, "*.h5")))
+        if not filenames:
+            raise RuntimeError("No filenames found in {}".format(self.data_dir))
+        filenames = shuffle_with_seed(filenames)
+        return filenames
+
+    def __getitem__(self, index):
+        data_dict = VideoDataset.__getitem__(self, index)
+        seq_state_obs = process_state(data_dict, self.observation_space, self.transforms, self.proprio_state)
+        # seq_rgb_obs = process_rgb(data_dict, self.observation_space, self.transforms)
+        # seq_depth_obs = process_depth(data_dict, self.observation_space, self.transforms)
+        seq_acts = process_actions(data_dict, self.observation_space, self.transforms)
+        seq_dict = {**seq_state_obs, **seq_acts}
+        return seq_dict
+
+    def __len__(self) -> int:
+        return VideoDataset.__len__(self)
+
+
+class GTSkillsCalvinDataset(CalvinDataset, SkillsNpzDataset):
+    def __init__(self, *args, skip_frames: int = 0, **kwargs):
+        CalvinDataset.__init__(self, *args, **kwargs)
+        if self.with_lang:
+            self.lang_annotated_skill, self.lang_skill = self.load_skill_info(self.abs_datasets_dir)
+
+            # Skill IDs
+            self.skills_to_idx = {skill: idx for idx, skill in enumerate(sorted(set(self.lang_skill)))}
+
+    def __getitem__(self, index):
+        seq_dict = CalvinDataset.__getitem__(self, index)
+        if self.with_lang:
+            skill_ids = np.array([self.skills_to_idx[self.lang_skill[index]]])
         seq_lang = {"skills": torch.from_numpy(skill_ids) if self.with_lang else torch.empty(0)}
         seq_dict.update(seq_lang)
         return seq_dict
