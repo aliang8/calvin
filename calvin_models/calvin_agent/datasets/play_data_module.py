@@ -64,6 +64,8 @@ class PlayDataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         transforms = load_dataset_statistics(self.training_dir, self.val_dir, self.transforms)
+        # transforms.train["states"] = transforms.train["robot_obs"]
+        # transforms.val["states"] = transforms.val["robot_obs"]
 
         self.train_transforms = {
             cam: [hydra.utils.instantiate(transform) for transform in transforms.train[cam]] for cam in transforms.train

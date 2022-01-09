@@ -254,8 +254,6 @@ class SkillsNpzDataset(NpzDataset):
 
 
 class CalvinDataset(BaseDataset, VideoDataset):
-    NONIMAGE_FIELDS = ["states", "actions", "pad_mask", "skills"]
-
     def __init__(self, *args, skip_frames: int = 0, **kwargs):
         data_conf = kwargs["data"]
         VideoDataset.__init__(
@@ -270,6 +268,7 @@ class CalvinDataset(BaseDataset, VideoDataset):
         del kwargs["data"]
         del kwargs["phase"]
         BaseDataset.__init__(self, *args, **kwargs)
+        self.NONIMAGE_FIELDS = ["robot_obs", "scene_obs", "actions", "pad_mask", "skills"]
 
     def _get_filenames(self):
         """Loads filenames from self.data_dir, expects subfolders train/val/test, each with hdf5 files"""
@@ -285,7 +284,7 @@ class CalvinDataset(BaseDataset, VideoDataset):
         # seq_rgb_obs = process_rgb(data_dict, self.observation_space, self.transforms)
         # seq_depth_obs = process_depth(data_dict, self.observation_space, self.transforms)
         seq_acts = process_actions(data_dict, self.observation_space, self.transforms)
-        seq_dict = {**seq_state_obs, **seq_acts}
+        seq_dict = {"states": seq_state_obs["robot_obs"], **seq_acts}
         return seq_dict
 
     def __len__(self) -> int:

@@ -1,7 +1,7 @@
-_target_: calvin_agent.datasets.npz_dataset.NpzDataset
+_target_: calvin_agent.datasets.npz_dataset.GTSkillsCalvinDataset
 key: "lang"
 save_format: "npz"
-batch_size: 32
+batch_size: 64
 min_window_size: 16
 max_window_size: 32
 proprio_state: ${datamodule.proprioception_dims}
@@ -13,7 +13,7 @@ data:
   dataset_spec:
     dataset_class: ""
     n_actions: 7
-    state_dim: 8
+    state_dim: 39
     env_name: "calvin"
     res: 128
     max_seq_len: 280
@@ -21,5 +21,5 @@ data:
     subseq_len: 11
   device: "cuda"
   randomize_length: 0
-  split: [0.9, 0.1, 0.0]
+  split: [0.8, 0.2, 0.0]
   resolution: 128

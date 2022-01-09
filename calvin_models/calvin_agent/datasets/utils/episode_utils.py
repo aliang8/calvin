@@ -55,7 +55,7 @@ def process_state(
         state_obs_sliced.append(seq_state_obs_)
     seq_state_obs = torch.cat(state_obs_sliced, dim=1)
 
-    return {"states": seq_state_obs}
+    return {"robot_obs": seq_state_obs}
 
 
 def process_rgb(
